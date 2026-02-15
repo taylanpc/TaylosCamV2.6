@@ -4,17 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Taylos Cam Stable</title>
+
 <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
 <style>
 body,html{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
 video{width:100%;height:100%;object-fit:cover}
-#local{position:absolute;bottom:100px;right:20px;width:120px;height:160px;border:2px solid #38bdf8;border-radius:15px;overflow:hidden}
-.controls{position:absolute;bottom:0;width:100%;height:90px;background:rgba(0,0,0,.5);display:flex;justify-content:space-evenly;align-items:center}
+#localBox{position:absolute;bottom:100px;right:20px;width:120px;height:160px;border:2px solid #38bdf8;border-radius:15px;overflow:hidden;z-index:5}
+.controls{position:absolute;bottom:0;width:100%;height:90px;background:rgba(0,0,0,.6);display:flex;justify-content:space-evenly;align-items:center}
 button{width:55px;height:55px;border-radius:50%;border:none;background:#222;color:#fff;font-size:20px}
 .rec-active{background:red!important}
-.top{position:absolute;top:0;width:100%;text-align:center;color:#38bdf8;background:rgba(0,0,0,.6);padding:10px}
+.top{position:absolute;top:0;width:100%;text-align:center;color:#38bdf8;background:rgba(0,0,0,.6);padding:10px;z-index:10}
 </style>
 </head>
 
@@ -22,19 +23,138 @@ button{width:55px;height:55px;border-radius:50%;border:none;background:#222;colo
 
 <div class="top" id="myid">BAĞLANIYOR...</div>
 
-<video id="remote" autoplay playsinline></video>
+<video id="remoteVideo" autoplay playsinline></video>
 
-<div id="local">
-<video id="me" autoplay muted playsinline></video>
+<div id="localBox">
+<video id="localVideo" autoplay muted playsinline></video>
 </div>
 
 <div class="controls">
-<button onclick="tgl('A')"><i class="fa fa-microphone" id="micI"></i></button>
-<button onclick="tgl('V')"><i class="fa fa-video" id="camI"></i></button>
+<button onclick="toggleMic()"><i class="fa fa-microphone"></i></button>
+<button onclick="toggleCam()"><i class="fa fa-video"></i></button>
 <button onclick="callPeer()"><i class="fa fa-phone"></i></button>
-<button onclick="switchCam()"><i class="fa fa-sync"></i></button>
+<button onclick="switchCamera()"><i class="fa fa-sync"></i></button>
 <button id="recBtn" onclick="toggleRec()"><i class="fa fa-circle"></i></button>
 </div>
+
+<script>
+
+let camMode="user";
+let myStream;
+let recorder;
+let chunks=[];
+let canvasStream;
+let canvasRecorder;
+
+const peer=new Peer("taylos-"+Math.random().toString(36).substr(2,4));
+
+peer.on("open",id=>{
+document.getElementById("myid").innerText="ID: "+id;
+});
+
+async function initCamera(){
+
+if(myStream) myStream.getTracks().forEach(t=>t.stop());
+
+myStream=await navigator.mediaDevices.getUserMedia({
+video:{
+facingMode:camMode,
+width:{ideal:1280},
+height:{ideal:720},
+frameRate:{ideal:25,max:25}
+},
+audio:true
+});
+
+document.getElementById("localVideo").srcObject=myStream;
+}
+
+initCamera();
+
+function switchCamera(){
+camMode=(camMode==="user")?"environment":"user";
+initCamera();
+}
+
+function callPeer(){
+let id=prompt("ID gir:");
+if(!id)return;
+let call=peer.call(id,myStream);
+call.on("stream",s=>document.getElementById("remoteVideo").srcObject=s);
+}
+
+peer.on("call",call=>{
+call.answer(myStream);
+call.on("stream",s=>document.getElementById("remoteVideo").srcObject=s);
+});
+
+function toggleMic(){
+let track=myStream.getAudioTracks()[0];
+track.enabled=!track.enabled;
+}
+
+function toggleCam(){
+let track=myStream.getVideoTracks()[0];
+track.enabled=!track.enabled;
+}
+
+function toggleRec(){
+
+if(!canvasRecorder || canvasRecorder.state==="inactive"){
+
+// Canvas ile düşük yük encode
+const video=document.getElementById("localVideo");
+const canvas=document.createElement("canvas");
+canvas.width=960; // 540p yük azaltır
+canvas.height=540;
+
+const ctx=canvas.getContext("2d");
+
+function draw(){
+ctx.drawImage(video,0,0,canvas.width,canvas.height);
+requestAnimationFrame(draw);
+}
+draw();
+
+canvasStream=canvas.captureStream(25);
+
+canvasRecorder=new MediaRecorder(canvasStream,{
+mimeType:'video/webm;codecs=vp8',
+videoBitsPerSecond:1000000
+});
+
+chunks=[];
+
+canvasRecorder.ondataavailable=e=>{
+if(e.data.size>0)chunks.push(e.data);
+};
+
+canvasRecorder.onstop=()=>{
+const blob=new Blob(chunks,{type:'video/webm'});
+const url=URL.createObjectURL(blob);
+const a=document.createElement("a");
+a.href=url;
+a.download="TAYLOS_"+Date.now()+".webm";
+a.click();
+};
+
+canvasRecorder.start();
+
+document.getElementById("recBtn").classList.add("rec-active");
+
+}else{
+
+canvasRecorder.stop();
+document.getElementById("recBtn").classList.remove("rec-active");
+
+}
+
+}
+
+</script>
+
+</body>
+</html></div>
 
 <script>
 
