@@ -2,39 +2,131 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Taylos Cam v3 - Optimized</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Taylos Cam Stable</title>
 <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
 <style>
-body, html {
-    margin:0;
-    padding:0;
-    width:100%;
-    height:100%;
-    background:#000;
-    overflow:hidden;
-    font-family:sans-serif;
+body,html{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
+video{width:100%;height:100%;object-fit:cover}
+#local{position:absolute;bottom:100px;right:20px;width:120px;height:160px;border:2px solid #38bdf8;border-radius:15px;overflow:hidden}
+.controls{position:absolute;bottom:0;width:100%;height:90px;background:rgba(0,0,0,.5);display:flex;justify-content:space-evenly;align-items:center}
+button{width:55px;height:55px;border-radius:50%;border:none;background:#222;color:#fff;font-size:20px}
+.rec-active{background:red!important}
+.top{position:absolute;top:0;width:100%;text-align:center;color:#38bdf8;background:rgba(0,0,0,.6);padding:10px}
+</style>
+</head>
+
+<body>
+
+<div class="top" id="myid">BAĞLANIYOR...</div>
+
+<video id="remote" autoplay playsinline></video>
+
+<div id="local">
+<video id="me" autoplay muted playsinline></video>
+</div>
+
+<div class="controls">
+<button onclick="tgl('A')"><i class="fa fa-microphone" id="micI"></i></button>
+<button onclick="tgl('V')"><i class="fa fa-video" id="camI"></i></button>
+<button onclick="callPeer()"><i class="fa fa-phone"></i></button>
+<button onclick="switchCam()"><i class="fa fa-sync"></i></button>
+<button id="recBtn" onclick="toggleRec()"><i class="fa fa-circle"></i></button>
+</div>
+
+<script>
+
+let camMode="user";
+let myStream, recorder, chunks=[];
+const id="taylos-"+Math.random().toString(36).substr(2,4);
+const peer=new Peer(id);
+
+peer.on("open",i=>document.getElementById("myid").innerText="ID: "+i);
+
+async function initCam(){
+if(myStream) myStream.getTracks().forEach(t=>t.stop());
+
+myStream=await navigator.mediaDevices.getUserMedia({
+video:{
+facingMode:camMode,
+width:{ideal:1280},
+height:{ideal:720},
+frameRate:{ideal:25,max:25}
+},
+audio:true
+});
+
+document.getElementById("me").srcObject=myStream;
 }
-#remoteVideo, #localVideo {
-    width:100%;
-    height:100%;
-    object-fit:cover;
+initCam();
+
+function switchCam(){
+camMode=(camMode==="user")?"environment":"user";
+initCam();
 }
-#remote-container{
-    position:absolute;
-    width:100%;
-    height:100%;
+
+function callPeer(){
+let rid=prompt("ID gir:");
+if(!rid)return;
+let call=peer.call(rid,myStream);
+call.on("stream",s=>document.getElementById("remote").srcObject=s);
 }
-#local-container{
-    position:absolute;
-    bottom:100px;
-    right:20px;
-    width:110px;
-    height:160px;
-    border:2px solid #38bdf8;
+
+peer.on("call",call=>{
+call.answer(myStream);
+call.on("stream",s=>document.getElementById("remote").srcObject=s);
+});
+
+function tgl(t){
+let tr=t==='A'?myStream.getAudioTracks()[0]:myStream.getVideoTracks()[0];
+tr.enabled=!tr.enabled;
+}
+
+function toggleRec(){
+
+if(!recorder || recorder.state==="inactive"){
+
+chunks=[];
+
+recorder=new MediaRecorder(myStream,{
+mimeType:'video/webm;codecs=vp8',
+videoBitsPerSecond:1500000
+});
+
+recorder.ondataavailable=e=>{
+if(e.data.size>0)chunks.push(e.data);
+};
+
+recorder.onstop=()=>{
+
+const blob=new Blob(chunks,{type:'video/webm'});
+
+const reader=new FileReader();
+reader.readAsDataURL(blob);
+
+reader.onloadend=function(){
+const a=document.createElement("a");
+a.href=reader.result;
+a.download="TAYLOS_"+Date.now()+".webm";
+a.click();
+};
+};
+
+recorder.start(2000);
+document.getElementById("recBtn").classList.add("rec-active");
+
+}else{
+recorder.stop();
+document.getElementById("recBtn").classList.remove("rec-active");
+}
+
+}
+
+</script>
+</body>
+</html>    border:2px solid #38bdf8;
     border-radius:15px;
     overflow:hidden;
     z-index:10;
