@@ -1,1 +1,209 @@
-<!DOCTYPE html> <html lang="tr"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> <title>Taylos Cam v3 - Dynamic</title> <meta name="mobile-web-app-capable" content="yes"> <meta name="apple-mobile-web-app-capable" content="yes"> <meta name="theme-color" content="#020617"> <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script> <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"> <style> body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; } #remote-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; } #remoteVideo { width: 100%; height: 100%; object-fit: cover; } #local-container { position: absolute; bottom: 100px; right: 20px; width: 110px; height: 160px; z-index: 10; border: 2px solid #38bdf8; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.5); } #localVideo { width: 100%; height: 100%; object-fit: cover; background: #111; } .top-bar { position: absolute; top: 0; width: 100%; padding: 15px; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent); z-index: 20; text-align: center; color: #38bdf8; font-weight: bold; font-size: 14px; } .controls { position: absolute; bottom: 0; width: 100%; height: 90px; background: rgba(0,0,0,0.3); backdrop-filter: blur(8px); display: flex; justify-content: space-evenly; align-items: center; z-index: 30; } .btn { width: 55px; height: 55px; border-radius: 50%; border: none; background: rgba(255,255,255,0.1); color: white; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: 0.2s; } .btn:active { transform: scale(0.9); background: rgba(255,255,255,0.2); } .btn-call { background: #2563eb; width: 70px; border-radius: 18px; } .btn-rec { background: #991b1b; } .rec-active { animation: blink 1s infinite; background: #ff0000 !important; border: 2px solid #fff; } @keyframes blink { 50% { opacity: 0.4; } } @media (orientation: landscape) { #local-container { width: 160px; height: 90px; bottom: 20px; right: 100px; } .controls { width: 80px; height: 100%; right: 0; flex-direction: column; background: rgba(0,0,0,0.6); } } </style> </head> <body> <div class="top-bar" id="my-id">BAĞLANTI KURULUYOR...</div> <div id="remote-container"><video id="remoteVideo" autoplay playsinline></video></div> <div id="local-container"><video id="localVideo" autoplay muted playsinline></video></div> <div class="controls"> <button class="btn" onclick="tgl('A')"><i class="fa fa-microphone" id="micI"></i></button> <button class="btn" onclick="tgl('V')"><i class="fa fa-video" id="camI"></i></button> <button class="btn btn-call" onclick="arama()"><i class="fa fa-phone"></i></button> <button class="btn" onclick="sw()"><i class="fa fa-sync"></i></button> <button class="btn btn-rec" id="recBtn" onclick="toggleRec()"><i class="fa fa-circle"></i></button> </div> <script> // --- DİNAMİK ID SİSTEMİ --- // Her cihaz açılışta rastgele 6 haneli bir ID alır (Örn: taylos-a8b2) const randomSuffix = Math.random().toString(36).substr(2, 4); const myCustomID = "taylos-" + randomSuffix; let peer = new Peer(myCustomID); let myStream, recorder, chunks = []; let camMode = "user"; // 1080p Kayıt Hazırlığı async function initCamera(mode) { if(myStream) myStream.getTracks().forEach(t => t.stop()); try { myStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode, width: 1920, height: 1080, frameRate: 25 }, audio: true }); document.getElementById('localVideo').srcObject = myStream; } catch(e) { console.log("HD kamera hatası, standart moda geçiliyor."); myStream = await navigator.mediaDevices.getUserMedia({video: true, audio: true}); document.getElementById('localVideo').srcObject = myStream; } } peer.on('open', id => document.getElementById('my-id').innerText = "SENİN ID: " + id); peer.on('call', call => { call.answer(myStream); setBitrate(call); // Yayın 720p sınırı call.on('stream', s => document.getElementById('remoteVideo').srcObject = s); }); function arama() { let rId = prompt("Bağlanmak istediğin Cihaz ID'sini gir:"); if(rId) { let call = peer.call(rId, myStream); setBitrate(call); // Yayın 720p sınırı call.on('stream', s => document.getElementById('remoteVideo').srcObject = s); } } // İNTERNETİ KORU: Yayını 1.5 Mbps (720p) ile sınırla function setBitrate(call) { call.peerConnection.addEventListener('iceconnectionstatechange', () => { if (call.peerConnection.iceConnectionState === 'connected') { const videoSender = call.peerConnection.getSenders().find(s => s.track.kind === 'video'); const params = videoSender.getParameters(); if (!params.encodings) params.encodings = [{}]; params.encodings[0].maxBitrate = 1500000; videoSender.setParameters(params); } }); } // KASMAYI ÖNLEYEN 1080P KAYIT function toggleRec() { if (!recorder || recorder.state === "inactive") { chunks = []; let options = { mimeType: 'video/webm;codecs=h264', videoBitsPerSecond: 2500000 }; if (!MediaRecorder.isTypeSupported(options.mimeType)) options.mimeType = 'video/webm;codecs=vp8'; recorder = new MediaRecorder(myStream, options); recorder.ondataavailable = e => chunks.push(e.data); recorder.onstop = () => { const blob = new Blob(chunks, { type: 'video/webm' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `KAYIT_${new Date().getTime()}.webm`; a.click(); }; recorder.start(2000); // İşlemciyi yormamak için 2sn bloklar document.getElementById('recBtn').classList.add('rec-active'); } else { recorder.stop(); document.getElementById('recBtn').classList.remove('rec-active'); } } function tgl(t) { let tr = t === 'A' ? myStream.getAudioTracks()[0] : myStream.getVideoTracks()[0]; tr.enabled = !tr.enabled; document.getElementById(t === 'A' ? 'micI' : 'camI').className = `fa fa-${t==='A'?(tr.enabled?'microphone':'microphone-slash'):(tr.enabled?'video':'video-slash')}`; } async function sw() { camMode = (camMode === "user") ? "environment" : "user"; await initCamera(camMode); } initCamera(camMode); </script> </body> </html>
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Taylos Cam v3 - Optimized</title>
+
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<style>
+body, html {
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    background:#000;
+    overflow:hidden;
+    font-family:sans-serif;
+}
+#remoteVideo, #localVideo {
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+#remote-container{
+    position:absolute;
+    width:100%;
+    height:100%;
+}
+#local-container{
+    position:absolute;
+    bottom:100px;
+    right:20px;
+    width:110px;
+    height:160px;
+    border:2px solid #38bdf8;
+    border-radius:15px;
+    overflow:hidden;
+    z-index:10;
+}
+.controls{
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:90px;
+    background:rgba(0,0,0,0.5);
+    display:flex;
+    justify-content:space-evenly;
+    align-items:center;
+}
+.btn{
+    width:55px;
+    height:55px;
+    border-radius:50%;
+    border:none;
+    background:rgba(255,255,255,0.1);
+    color:white;
+    font-size:20px;
+}
+.btn-rec{
+    background:#991b1b;
+}
+.rec-active{
+    background:red!important;
+}
+.top-bar{
+    position:absolute;
+    top:0;
+    width:100%;
+    padding:10px;
+    text-align:center;
+    color:#38bdf8;
+    background:rgba(0,0,0,0.6);
+}
+</style>
+</head>
+
+<body>
+
+<div class="top-bar" id="my-id">BAĞLANTI KURULUYOR...</div>
+
+<div id="remote-container">
+    <video id="remoteVideo" autoplay playsinline></video>
+</div>
+
+<div id="local-container">
+    <video id="localVideo" autoplay muted playsinline></video>
+</div>
+
+<div class="controls">
+    <button class="btn" onclick="tgl('A')"><i class="fa fa-microphone" id="micI"></i></button>
+    <button class="btn" onclick="tgl('V')"><i class="fa fa-video" id="camI"></i></button>
+    <button class="btn" onclick="arama()"><i class="fa fa-phone"></i></button>
+    <button class="btn btn-rec" id="recBtn" onclick="toggleRec()">
+        <i class="fa fa-circle"></i>
+    </button>
+</div>
+
+<script>
+
+// ---- DİNAMİK ID ----
+const randomSuffix = Math.random().toString(36).substr(2, 4);
+const myCustomID = "taylos-" + randomSuffix;
+let peer = new Peer(myCustomID);
+
+let myStream, recorder, chunks = [];
+let camMode = "user";
+
+// ---- 1080P 25FPS KAMERA ----
+async function initCamera(mode) {
+    if(myStream) myStream.getTracks().forEach(t => t.stop());
+
+    try{
+        myStream = await navigator.mediaDevices.getUserMedia({
+            video:{
+                facingMode:mode,
+                width:{ideal:1920},
+                height:{ideal:1080},
+                frameRate:{ideal:25,max:25}
+            },
+            audio:true
+        });
+    }catch(e){
+        myStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    }
+
+    document.getElementById("localVideo").srcObject = myStream;
+}
+
+peer.on('open', id=>{
+    document.getElementById("my-id").innerText="SENİN ID: "+id;
+});
+
+peer.on('call', call=>{
+    call.answer(myStream);
+    call.on('stream', s=>{
+        document.getElementById("remoteVideo").srcObject=s;
+    });
+});
+
+function arama(){
+    let rId = prompt("Bağlanmak istediğin ID:");
+    if(rId){
+        let call = peer.call(rId,myStream);
+        call.on('stream', s=>{
+            document.getElementById("remoteVideo").srcObject=s;
+        });
+    }
+}
+
+// ---- 1080P HAFİF KAYIT (2 Mbps) ----
+function toggleRec(){
+
+    if(!recorder || recorder.state==="inactive"){
+
+        chunks=[];
+
+        let options={
+            mimeType:'video/webm;codecs=vp8',
+            videoBitsPerSecond:2000000
+        };
+
+        recorder=new MediaRecorder(myStream,options);
+
+        recorder.ondataavailable=e=>{
+            if(e.data.size>0) chunks.push(e.data);
+        };
+
+        recorder.onstop=()=>{
+            const blob=new Blob(chunks,{type:'video/webm'});
+            const url=URL.createObjectURL(blob);
+
+            // WebView uyumlu indirme
+            const a=document.createElement("a");
+            a.style.display="none";
+            a.href=url;
+            a.download="KAYIT_"+Date.now()+".webm";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            setTimeout(()=>URL.revokeObjectURL(url),100);
+        };
+
+        recorder.start(2000);
+
+        document.getElementById("recBtn").classList.add("rec-active");
+
+    }else{
+        recorder.stop();
+        document.getElementById("recBtn").classList.remove("rec-active");
+    }
+}
+
+// ---- Mic & Cam ----
+function tgl(t){
+    let tr = t==='A'?myStream.getAudioTracks()[0]:myStream.getVideoTracks()[0];
+    tr.enabled=!tr.enabled;
+
+    document.getElementById(t==='A'?'micI':'camI')
+        .className=`fa fa-${t==='A'?(tr.enabled?'microphone':'microphone-slash'):(tr.enabled?'video':'video-slash')}`;
+}
+
+initCamera(camMode);
+
+</script>
+</body>
+</html>
